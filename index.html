@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CR2 в JPG/PNG Конвертер</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js"></script>
+    <style>
+        .drop-zone--over {
+            border-color: #10b981;
+            background-color: #ecfdf5;
+        }
+        .progress-transition {
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+
+<div class="container mx-auto px-4 py-8 max-w-4xl">
+    <header class="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+        <div class="text-center md:text-left">
+            <h1 id="ui-title" class="text-4xl font-bold text-gray-800 mb-2">RAW Конвертер</h1>
+            <p id="ui-subtitle" class="text-gray-600">Перетворюйте ваші .CR2 файли в JPG або PNG локально у браузері</p>
+        </div>
+        <!-- Перемикач мови -->
+        <div class="flex bg-white rounded-lg shadow-sm p-1 border border-gray-100">
+            <button onclick="setLanguage('uk')" id="lang-uk" class="px-3 py-1 rounded-md text-sm font-medium transition">UA</button>
+            <button onclick="setLanguage('en')" id="lang-en" class="px-3 py-1 rounded-md text-sm font-medium transition text-gray-400">EN</button>
+        </div>
+    </header>
+
+    <!-- Налаштування -->
+    <div class="bg-white p-6 rounded-xl shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4 border border-gray-100">
+        <div class="flex items-center gap-4">
+            <span id="ui-format-label" class="font-medium text-gray-700">Формат виводу:</span>
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="radio" name="format" value="jpeg" checked class="form-radio text-green-600">
+                <span class="ml-2 uppercase">JPG</span>
+            </label>
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="radio" name="format" value="png" class="form-radio text-green-600">
+                <span class="ml-2 uppercase">PNG</span>
+            </label>
+        </div>
+        <button id="clearHistory" class="text-sm text-red-500 hover:text-red-700 transition font-medium">Очистити історію</button>
+    </div>
+
+    <!-- Зона завантаження -->
+    <div id="dropZone" class="border-4 border-dashed border-gray-300 rounded-2xl p-12 text-center transition-all cursor-pointer bg-white hover:border-green-400 group">
+        <input type="file" id="fileInput" multiple accept=".cr2" class="hidden">
+        <div class="flex flex-col items-center">
+            <svg class="w-16 h-16 text-gray-400 mb-4 group-hover:text-green-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            <p id="ui-drop-title" class="text-xl text-gray-700 font-medium">Перетягніть файли .CR2 сюди</p>
+            <p id="ui-drop-subtitle" class="text-sm text-gray-500 mt-2">або натисніть для вибору</p>
+        </div>
+    </div>
+
+    <!-- Список файлів -->
+    <div id="processSection" class="hidden mt-8">
+        <div class="flex items-center justify-between mb-4">
+            <h2 id="ui-queue-title" class="text-xl font-semibold text-gray-800">Черга обробки</h2>
+            <button id="downloadZip" class="bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 transition shadow-md hidden flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span id="ui-download-zip">Завантажити все (ZIP)</span>
+            </button>
+        </div>
+        <div id="fileList" class="space-y-3"></div>
+    </div>
+
+    <!-- Історія -->
+    <div class="mt-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <span id="ui-history-title">Історія</span>
+            <span id="ui-history-count" class="text-xs font-normal text-gray-400 bg-gray-100 px-2 py-1 rounded-full">8 останніх</span>
+        </h2>
+        <div id="historyList" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"></div>
+    </div>
+</div>
+
+<div id="toast" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 bg-gray-800 text-white px-6 py-3 rounded-xl shadow-2xl z-50">
+    Повідомлення
+</div>
+
+<script>
+  const i18n = {
+    uk: {
+      title: "RAW Конвертер",
+      subtitle: "Перетворюйте ваші .CR2 файли в JPG або PNG локально у браузері",
+      formatLabel: "Формат виводу:",
+      clearHistory: "Очистити історію",
+      dropTitle: "Перетягніть файли .CR2 сюди",
+      dropSubtitle: "або натисніть для вибору",
+      queueTitle: "Черга обробки",
+      downloadZip: "Завантажити все (ZIP)",
+      historyTitle: "Історія",
+      historyCount: "8 останніх",
+      historyEmpty: "Історія порожня",
+      processing: "В процесі...",
+      download: "Завантажити",
+      error: "Помилка",
+      toastZip: "Архів завантажено!",
+      toastHistoryCleared: "Історію очищено",
+      toastSelectFiles: "Будь ласка, виберіть файли .CR2"
+    },
+    en: {
+      title: "RAW Converter",
+      subtitle: "Convert your .CR2 files to JPG or PNG locally in your browser",
+      formatLabel: "Output Format:",
+      clearHistory: "Clear History",
+      dropTitle: "Drag .CR2 files here",
+      dropSubtitle: "or click to select",
+      queueTitle: "Processing Queue",
+      downloadZip: "Download All (ZIP)",
+      historyTitle: "History",
+      historyCount: "Last 8",
+      historyEmpty: "History is empty",
+      processing: "Processing...",
+      download: "Download",
+      error: "Error",
+      toastZip: "Archive downloaded!",
+      toastHistoryCleared: "History cleared",
+      toastSelectFiles: "Please select .CR2 files"
+    }
+  };
+
+  let currentLang = localStorage.getItem('app_lang') || 'uk';
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileList = document.getElementById('fileList');
+  const processSection = document.getElementById('processSection');
+  const downloadZipBtn = document.getElementById('downloadZip');
+  const historyList = document.getElementById('historyList');
+  const clearHistoryBtn = document.getElementById('clearHistory');
+
+  let convertedFiles = [];
+
+  window.onload = () => {
+    updateUI();
+    renderHistory();
+  };
+
+  function setLanguage(lang) {
+    currentLang = lang;
+    localStorage.setItem('app_lang', lang);
+    updateUI();
+    renderHistory();
+  }
+
+  function updateUI() {
+    const t = i18n[currentLang];
+    document.getElementById('ui-title').innerText = t.title;
+    document.getElementById('ui-subtitle').innerText = t.subtitle;
+    document.getElementById('ui-format-label').innerText = t.formatLabel;
+    document.getElementById('clearHistory').innerText = t.clearHistory;
+    document.getElementById('ui-drop-title').innerText = t.dropTitle;
+    document.getElementById('ui-drop-subtitle').innerText = t.dropSubtitle;
+    document.getElementById('ui-queue-title').innerText = t.queueTitle;
+    document.getElementById('ui-download-zip').innerText = t.downloadZip;
+    document.getElementById('ui-history-title').innerText = t.historyTitle;
+    document.getElementById('ui-history-count').innerText = t.historyCount;
+
+    // Стилі кнопок мови
+    document.getElementById('lang-uk').className = `px-3 py-1 rounded-md text-sm font-medium transition ${currentLang === 'uk' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`;
+    document.getElementById('lang-en').className = `px-3 py-1 rounded-md text-sm font-medium transition ${currentLang === 'en' ? 'bg-green-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-600'}`;
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drop-zone--over');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drop-zone--over');
+    });
+  });
+
+  dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
+
+  async function handleFiles(files) {
+    const fileArray = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.cr2'));
+    if (fileArray.length === 0) {
+      showToast(i18n[currentLang].toastSelectFiles);
+      return;
+    }
+
+    processSection.classList.remove('hidden');
+    convertedFiles = [];
+    downloadZipBtn.classList.add('hidden');
+    fileList.innerHTML = '';
+
+    for (const file of fileArray) {
+      await processFile(file);
+    }
+
+    if (convertedFiles.length > 0) {
+      downloadZipBtn.classList.remove('hidden');
+    }
+  }
+
+  async function processFile(file) {
+    const format = document.querySelector('input[name="format"]:checked').value;
+    const safeId = btoa(unescape(encodeURIComponent(file.name))).replace(/=/g, '');
+    const t = i18n[currentLang];
+
+    const item = document.createElement('div');
+    item.className = "bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between animate-fade-in";
+    item.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="flex-shrink-0 w-10 h-10 bg-green-50 text-green-600 rounded-lg flex items-center justify-center font-bold text-[10px]">
+                        RAW
+                    </div>
+                    <div class="overflow-hidden">
+                        <p class="text-sm font-medium text-gray-700 truncate w-40 md:w-64">${file.name}</p>
+                        <div class="w-full bg-gray-100 rounded-full h-2 mt-1.5 overflow-hidden">
+                            <div id="progress-${safeId}" class="progress-transition bg-blue-500 h-full w-0"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="status-${safeId}" class="text-xs font-medium text-gray-400">${t.processing}</div>
+            `;
+    fileList.appendChild(item);
+
+    const progressBar = document.getElementById(`progress-${safeId}`);
+    const statusLabel = document.getElementById(`status-${safeId}`);
+
+    try {
+      setTimeout(() => { if(progressBar) progressBar.style.width = '90%'; }, 100);
+
+      const resultBlob = await convertCR2(file, format);
+      const fileNameNoExt = file.name.substring(0, file.name.lastIndexOf('.'));
+      const newName = `${fileNameNoExt}.${format === 'jpeg' ? 'jpg' : 'png'}`;
+
+      convertedFiles.push({ blob: resultBlob, name: newName });
+
+      progressBar.style.width = '100%';
+      progressBar.classList.replace('bg-blue-500', 'bg-green-500');
+
+      statusLabel.innerHTML = `<button onclick="downloadSingle('${newName}', ${convertedFiles.length - 1})" class="text-green-600 hover:text-green-800 flex items-center gap-1 font-bold">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    ${t.download}
+                </button>`;
+
+      saveToHistory(newName, resultBlob);
+    } catch (err) {
+      console.error(err);
+      progressBar.style.width = '100%';
+      progressBar.classList.replace('bg-blue-500', 'bg-red-500');
+      statusLabel.innerHTML = `<span class="text-red-500">${t.error}</span>`;
+    }
+  }
+
+  async function convertCR2(file, format) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const buffer = e.target.result;
+          const ifds = UTIF.decode(buffer);
+          UTIF.decodeImage(buffer, ifds[0]);
+          const rgba = UTIF.toRGBA8(ifds[0]);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = ifds[0].width;
+          canvas.height = ifds[0].height;
+          const ctx = canvas.getContext('2d');
+
+          const imgData = ctx.createImageData(canvas.width, canvas.height);
+          imgData.data.set(rgba);
+          ctx.putImageData(imgData, 0, 0);
+
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject("Blob error");
+          }, `image/${format}`, 0.85);
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function downloadSingle(name, index) {
+    const fileData = convertedFiles[index];
+    const url = URL.createObjectURL(fileData.blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  downloadZipBtn.addEventListener('click', async () => {
+    const zip = new JSZip();
+    convertedFiles.forEach(file => zip.file(file.name, file.blob));
+    const content = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url; a.download = "images.zip"; a.click();
+    URL.revokeObjectURL(url);
+    showToast(i18n[currentLang].toastZip);
+  });
+
+  function saveToHistory(name, blob) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      let history = JSON.parse(localStorage.getItem('conv_history') || '[]');
+      history.unshift({ name, data: reader.result, time: Date.now() });
+      if (history.length > 8) history.pop();
+      localStorage.setItem('conv_history', JSON.stringify(history));
+      renderHistory();
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function renderHistory() {
+    const history = JSON.parse(localStorage.getItem('conv_history') || '[]');
+    const t = i18n[currentLang];
+    if (history.length === 0) {
+      historyList.innerHTML = `<div class="col-span-full py-10 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-xl">${t.historyEmpty}</div>`;
+      return;
+    }
+    historyList.innerHTML = history.map((item, idx) => `
+                <div class="bg-white p-2 rounded-xl shadow-sm border border-gray-100 group hover:border-green-200 transition-colors">
+                    <div class="relative overflow-hidden rounded-lg h-24 bg-gray-50">
+                        <img src="${item.data}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                    </div>
+                    <div class="mt-2 flex flex-col">
+                        <span class="text-[10px] font-medium text-gray-700 truncate">${item.name}</span>
+                        <button onclick="downloadFromHistory(${idx})" class="text-[10px] text-green-600 hover:text-green-800 font-bold mt-1 text-left">${t.download}</button>
+                    </div>
+                </div>
+            `).join('');
+  }
+
+  window.downloadFromHistory = (index) => {
+    const history = JSON.parse(localStorage.getItem('conv_history') || '[]');
+    const a = document.createElement('a');
+    a.href = history[index].data;
+    a.download = history[index].name;
+    a.click();
+  };
+
+  clearHistoryBtn.addEventListener('click', () => {
+    localStorage.removeItem('conv_history');
+    renderHistory();
+    showToast(i18n[currentLang].toastHistoryCleared);
+  });
+
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.innerText = msg;
+    toast.classList.remove('translate-y-20', 'opacity-0');
+    setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+  }
+</script>
+</body>
+</html>
