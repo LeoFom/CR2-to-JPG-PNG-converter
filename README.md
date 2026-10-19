@@ -3,6 +3,8 @@
 A modern, privacy-focused web application that allows photographers to convert **Canon RAW (.CR2)** files to **JPG or PNG** directly in the browser — no uploads, no servers, no heavy software.
 
 ---
+https://leofom.github.io/CR2-to-JPG-PNG-converter/
+---
 
 ## 🌍 Live Concept
 
